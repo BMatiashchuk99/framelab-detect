@@ -14,6 +14,11 @@
  * Only model names and sizes are read: no serial numbers, MAC addresses, user or computer names, installed
  * software. Nothing is written to disk or the registry.
  *
+ * Optional statistics: the window has a "Send anonymous hardware statistics" checkbox, unticked by default
+ * (STATS_DEFAULT_ON). Only if the user ticks it are the same values sent once more, without the code, to
+ * <site>/api/detect-stats when the window closes. Ticking or unticking it stops the countdown, so there is time
+ * to decide.
+ *
  * --print      writes the fallback address to standard output instead (testing, support)
  * --site URL   talks to another FrameLab address, e.g. a local development server
  */
@@ -35,12 +40,14 @@
 #define MAX_GPUS 3
 #define CODE_LEN 16
 #define CLOSE_AFTER_MS 8000
+#define STATS_DEFAULT_ON 0 /* statistics need an explicit tick (GDPR consent; SignPath: nothing sent unless requested) */
+#define USER_AGENT L"FrameLab-Detect/1.2"
 
 typedef enum { L_EN, L_UK, L_DE, L_RU } Lang;
 
 typedef struct {
     const wchar_t *title, *scanning, *sending, *done, *doneBrowser, *failed, *cpu, *gpu, *ram, *res, *unknown,
-        *closing, *footer, *privacy;
+        *closing, *footer, *privacy, *stats;
 } Text;
 
 static const Text TEXT[] = {
@@ -52,6 +59,7 @@ static const Text TEXT[] = {
         L"This window closes in %d s.",
         L"Only model names and sizes are sent, no personal data. Nothing is installed or stored.",
         L"Privacy policy",
+        L"Send anonymous hardware statistics",
     },
     [L_UK] = {
         L"FrameLab Detect", L"Скануємо ваш ПК…", L"Передаємо на FrameLab…",
@@ -61,15 +69,17 @@ static const Text TEXT[] = {
         L"Вікно закриється через %d с.",
         L"Передаються лише назви моделей і обсяги, без особистих даних. Нічого не встановлюється й не зберігається.",
         L"Політика конфіденційності",
+        L"Надсилати анонімну статистику заліза",
     },
     [L_DE] = {
-        L"FrameLab Detect", L"Dein PC wird gescannt…", L"Wird an FrameLab gesendet…",
-        L"Fertig! Das Ergebnis steht auf der FrameLab-Seite.", L"Fertig! FrameLab wurde mit deinem PC im Browser geöffnet.",
-        L"FrameLab ist nicht erreichbar. Bitte prüfe die Internetverbindung und starte das Programm erneut.",
+        L"FrameLab Detect", L"Ihr PC wird gescannt…", L"Wird an FrameLab gesendet…",
+        L"Fertig! Das Ergebnis steht auf der FrameLab-Seite.", L"Fertig! FrameLab wurde mit Ihrem PC im Browser geöffnet.",
+        L"FrameLab ist nicht erreichbar. Bitte prüfen Sie die Internetverbindung und starten Sie das Programm erneut.",
         L"Prozessor", L"Grafikkarte", L"Arbeitsspeicher", L"Bildschirm", L"nicht erkannt",
         L"Dieses Fenster schließt sich in %d s.",
         L"Gesendet werden nur Modellnamen und Größen, keine persönlichen Daten. Nichts wird installiert oder gespeichert.",
         L"Datenschutzerklärung",
+        L"Anonyme Hardware-Statistik senden",
     },
     [L_RU] = {
         L"FrameLab Detect", L"Сканируем ваш ПК…", L"Передаём на FrameLab…",
@@ -79,6 +89,7 @@ static const Text TEXT[] = {
         L"Окно закроется через %d с.",
         L"Передаются только названия моделей и объёмы, без личных данных. Ничего не устанавливается и не сохраняется.",
         L"Политика конфиденциальности",
+        L"Отправлять анонимную статистику железа",
     },
 };
 
@@ -301,24 +312,22 @@ static void browserUrl(Buf *u, const Specs *s, const Request *r) {
 
 /* ---------- sending to the waiting page ---------- */
 
-/* POST <site>/api/detect/<code> with a form-encoded body; TRUE on a 2xx answer. */
-static BOOL postToSite(const Request *r, const wchar_t *body) {
+/* POST <site><path> with a form-encoded body; TRUE on a 2xx answer. */
+static BOOL postTo(const Request *r, const wchar_t *path, const wchar_t *body) {
     wchar_t host[256] = L"";
     URL_COMPONENTS uc = { .dwStructSize = sizeof(uc), .lpszHostName = host, .dwHostNameLength = ARRAYSIZE(host) };
     if (!WinHttpCrackUrl(r->site, 0, 0, &uc)) return FALSE;
     BOOL secure = uc.nScheme == INTERNET_SCHEME_HTTPS;
 
-    wchar_t path[64];
-    swprintf(path, ARRAYSIZE(path), L"/api/detect/%ls", r->code);
     char data[2048];
     int len = WideCharToMultiByte(CP_UTF8, 0, body, -1, data, sizeof(data), NULL, NULL) - 1;
     if (len <= 0) return FALSE;
 
     BOOL ok = FALSE;
-    HINTERNET session = WinHttpOpen(L"FrameLab-Detect/1.1", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME,
+    HINTERNET session = WinHttpOpen(USER_AGENT, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME,
                                     WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) /* before Windows 8.1 */
-        session = WinHttpOpen(L"FrameLab-Detect/1.1", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME,
+        session = WinHttpOpen(USER_AGENT, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME,
                               WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) return FALSE;
     WinHttpSetTimeouts(session, 5000, 8000, 8000, 8000);
@@ -340,6 +349,13 @@ static BOOL postToSite(const Request *r, const wchar_t *body) {
     return ok;
 }
 
+/* POST <site>/api/detect/<code>: the waiting page. */
+static BOOL postToSite(const Request *r, const wchar_t *body) {
+    wchar_t path[64];
+    swprintf(path, ARRAYSIZE(path), L"/api/detect/%ls", r->code);
+    return postTo(r, path, body);
+}
+
 static BOOL postWithRetry(const Request *r, const wchar_t *body) {
     for (int attempt = 0; attempt < 3; attempt++) {
         if (postToSite(r, body)) return TRUE;
@@ -357,6 +373,7 @@ typedef struct {
     HWND dialog;
     volatile LONG finishedAt; /* dialog tick count when the work ended, 0 while running */
     volatile LONG failed;
+    volatile LONG holdOpen;   /* the user touched the statistics checkbox: no automatic closing */
     wchar_t content[2048];
     wchar_t heading[256];
     wchar_t privacyLink[512]; /* <a href="…/privacy">…</a>, shown in the footer */
@@ -437,7 +454,7 @@ static HRESULT CALLBACK onDialog(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
     } else if (msg == TDN_TIMER) {
         (void)wParam;
         LONG finished = app.finishedAt;
-        if (finished && !app.failed) {
+        if (finished && !app.failed && !app.holdOpen) {
             DWORD elapsed = GetTickCount() - (DWORD)finished;
             if (elapsed >= CLOSE_AFTER_MS) {
                 SendMessageW(hwnd, TDM_CLICK_BUTTON, IDCLOSE, 0);
@@ -447,6 +464,13 @@ static HRESULT CALLBACK onDialog(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
                 swprintf(footer, ARRAYSIZE(footer), L"%ls %ls", closing, app.privacyLink);
                 SendMessageW(hwnd, TDM_UPDATE_ELEMENT_TEXT, TDE_FOOTER, (LPARAM)footer);
             }
+        }
+    } else if (msg == TDN_VERIFICATION_CLICKED) {
+        /* Deciding about the statistics takes a moment: stop the countdown and keep only the privacy note. */
+        if (!InterlockedExchange(&app.holdOpen, 1)) {
+            wchar_t footer[1024];
+            swprintf(footer, ARRAYSIZE(footer), L"%ls %ls", app.t->footer, app.privacyLink);
+            SendMessageW(hwnd, TDM_UPDATE_ELEMENT_TEXT, TDE_FOOTER, (LPARAM)footer);
         }
     } else if (msg == TDN_HYPERLINK_CLICKED) {
         /* The only link is our own privacy policy; open web addresses only. */
@@ -505,13 +529,15 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR args, int show) {
         .cbSize = sizeof(cfg),
         .hInstance = inst,
         .dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_SHOW_MARQUEE_PROGRESS_BAR | TDF_CALLBACK_TIMER |
-                   TDF_SIZE_TO_CONTENT | TDF_USE_HICON_MAIN | TDF_ENABLE_HYPERLINKS,
+                   TDF_SIZE_TO_CONTENT | TDF_USE_HICON_MAIN | TDF_ENABLE_HYPERLINKS |
+                   (STATS_DEFAULT_ON ? TDF_VERIFICATION_FLAG_CHECKED : 0),
         .dwCommonButtons = TDCBF_CLOSE_BUTTON,
         .pszWindowTitle = t->title,
         .pszMainInstruction = t->scanning,
         .pszContent = app.content,
         .pszFooter = footer,
         .pszFooterIcon = TD_INFORMATION_ICON,
+        .pszVerificationText = t->stats,
         .pfCallback = onDialog,
     };
     cfg.hMainIcon = (HICON)LoadImageW(inst, MAKEINTRESOURCEW(1), IMAGE_ICON, 32, 32, LR_DEFAULTCOLOR);
@@ -520,7 +546,15 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR args, int show) {
         cfg.pszMainIcon = TD_INFORMATION_ICON;
     }
 
-    if (FAILED(TaskDialogIndirect(&cfg, NULL, NULL, NULL))) {
+    BOOL statsChecked = FALSE;
+    if (SUCCEEDED(TaskDialogIndirect(&cfg, NULL, NULL, &statsChecked))) {
+        /* Statistics only with the box ticked, and only once the scan has finished. */
+        if (statsChecked && app.finishedAt) {
+            Buf body = { .len = 0 };
+            putSpecs(&body, &app.specs);
+            postTo(&app.req, L"/api/detect-stats", body.buf);
+        }
+    } else {
         /* Very old or stripped-down systems without the task dialog: do the work, then a plain message box. */
         work(NULL);
         wchar_t text[2600];

@@ -24,6 +24,11 @@ Nothing to click: the visitor presses the button, runs the download, and the pag
 4. The site keeps them in memory only, for at most 15 minutes, and deletes them as soon as the page has read them.
    The page matches the names to its catalog and fills in the tool.
 5. The program shows the same values with a progress bar and closes itself after 8 seconds.
+6. Optional: the window has a **Send anonymous hardware statistics** checkbox, unticked by default. Only if the
+   user ticks it does the program send the same values once more, without the code, to
+   `https://framelab-fps.com/api/detect-stats` when the window closes. The site counts them (model names, memory
+   sizes, screen resolution) as one anonymous statistics event. Touching the checkbox stops the countdown, so the
+   window stays open until the user closes it.
 
 If the file has no code (it was renamed) or the site cannot be reached, the program opens
 `https://framelab-fps.com/<locale>/<tool>#fl-pc&v=1&cpu=…` in the default browser instead. Browsers never send the
@@ -37,6 +42,8 @@ Exactly this, nothing else (one `gpu`/`vram` pair per graphics adapter, `vram` i
 fl-pc&v=1&cpu=AMD%20Ryzen%205%208400F%206-Core%20Processor&gpu=NVIDIA%20GeForce%20RTX%204060&vram=8188&ram=32&res=2560x1440&status=done
 ```
 
+With the statistics box ticked, the same line without `&status=done` also goes to `/api/detect-stats`.
+
 ### What it does not do
 
 - It reads no serial numbers, MAC addresses, user or computer names, product keys or installed software.
@@ -47,7 +54,8 @@ fl-pc&v=1&cpu=AMD%20Ryzen%205%208400F%206-Core%20Processor&gpu=NVIDIA%20GeForce%
 
 This program will not transfer any information to other networked systems unless specifically requested by the
 user or the person operating it. It sends the values above only to the FrameLab page the user started it from,
-after the user pressed **Detect my specs** there and ran the download. The program window shows what is sent and
+after the user pressed **Detect my specs** there and ran the download. Statistics are sent only if the user ticks
+the unticked-by-default checkbox in the program window. The program window shows what is sent and
 links to the [FrameLab privacy policy](https://framelab-fps.com/en/privacy) (section "Automatic hardware detection").
 
 ## Command-line options
