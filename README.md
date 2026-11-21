@@ -65,7 +65,8 @@ sudo apt install gcc-mingw-w64-x86-64   # macOS: brew install mingw-w64
 ```
 
 The build has no timestamp, so the same source and compiler give the same file. Releases are built only by
-[GitHub Actions](.github/workflows/build.yml) from a `v*` tag; the workflow attaches the `.exe` and its SHA-256 to
+[GitHub Actions](.github/workflows/build.yml): push a `v*` tag, or run the *build* workflow by hand with the
+`release` input (for example `v1.2.0`), which creates the tag. The workflow attaches the `.exe` and its SHA-256 to
 the GitHub release.
 
 ## Code signing policy
