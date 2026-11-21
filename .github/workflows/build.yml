@@ -1,0 +1,61 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # create the release for a v* tag
+      actions: read   # SignPath reads the uploaded artifact
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mingw-w64
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64
+
+      - name: Build
+        run: ./build.sh
+
+      - name: Upload the unsigned build
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: FrameLab-Detect
+          path: dist/FrameLab-Detect.exe
+          if-no-files-found: error
+
+      # Code signing through SignPath Foundation, see "Code signing policy" in README.md.
+      # Runs for release tags once the repository has the SIGNPATH_API_TOKEN secret and the SIGNPATH_ORGANIZATION_ID
+      # variable. Every request waits until an approver confirms it in SignPath.
+      - name: Sign with SignPath
+        if: startsWith(github.ref, 'refs/tags/v') && vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: framelab-detect
+          signing-policy-slug: release-signing
+          github-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          file=dist/FrameLab-Detect.exe
+          if [ -f signed/FrameLab-Detect.exe ]; then file=signed/FrameLab-Detect.exe; fi
+          mkdir -p release && cp "$file" release/FrameLab-Detect.exe
+          (cd release && sha256sum FrameLab-Detect.exe > FrameLab-Detect.exe.sha256)
+          gh release create "$GITHUB_REF_NAME" release/FrameLab-Detect.exe release/FrameLab-Detect.exe.sha256 \
+            --title "FrameLab Detect $GITHUB_REF_NAME" --generate-notes
