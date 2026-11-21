@@ -4,8 +4,8 @@
 1 RT_MANIFEST "app.manifest"
 
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION 1,1,0,0
-PRODUCTVERSION 1,1,0,0
+FILEVERSION 1,2,0,0
+PRODUCTVERSION 1,2,0,0
 FILEFLAGSMASK 0x3fL
 FILEFLAGS 0x0L
 FILEOS VOS_NT_WINDOWS32
@@ -18,12 +18,12 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "FrameLab (framelab-fps.com)"
       VALUE "FileDescription", "FrameLab Detect: sends your PC specs to the FrameLab page that asked for them"
-      VALUE "FileVersion", "1.1.0.0"
+      VALUE "FileVersion", "1.2.0.0"
       VALUE "InternalName", "FrameLab-Detect"
       VALUE "LegalCopyright", "Copyright (c) 2026 FrameLab. MIT License."
       VALUE "OriginalFilename", "FrameLab-Detect.exe"
       VALUE "ProductName", "FrameLab Detect"
-      VALUE "ProductVersion", "1.1.0.0"
+      VALUE "ProductVersion", "1.2.0.0"
     END
   END
   BLOCK "VarFileInfo"
